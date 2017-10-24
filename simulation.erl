@@ -1,8 +1,14 @@
 -module(simulation).
--export([run/1]).
+
+-compile(export_all).
 
 -import(parser, [read/1]).
 
 run(Filename) ->
 	Data = parser:read(Filename),
-	io:format("Hello, world!~n").
+	Name = simulation:node(lists:nth(2, Data)),
+	Name.
+
+node(Dataset) ->
+	{ ID, HOST, NAME, PRIORITY, TOLERANCE } = Dataset,
+	NAME.
