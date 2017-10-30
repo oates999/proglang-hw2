@@ -1,3 +1,4 @@
+% DISTRIBUTED VERSION
 -module(simulation).
 -compile(export_all).
 
@@ -6,7 +7,8 @@
 spawn_from_list([]) ->
 	[];
 spawn_from_list([H|T]) ->
-	NewNode = start_node(H),
+	{ _, _, NAME, _, _ } = H,
+	NewNode = start_node(H, NAME),
 	[ NewNode | spawn_from_list(T)].
 
 link_nodes_from_list(Nodes, N) ->
@@ -36,20 +38,27 @@ kill_nodes(Nodes, N) ->
 			kill_nodes(Nodes, N+1)
 	end.
 
+run_looper(Nodes) ->
+	receive
+		{ _, { "output", OutputString } } ->
+			file:write_file("output.txt", OutputString, [append]),
+			run_looper(Nodes);
+		{ _, { "end_of_simulation" } } ->
+			kill_nodes(Nodes, 1),
+			file:write_file("output.txt", "End of simulation\n", [append])
+	end,
+	exit(normal).
+
 run(Filename) ->
 	Data = parser:read(Filename),
 	Nodes = spawn_from_list(Data),
 	link_nodes_from_list(Nodes, 1),
 	lists:nth(1, Nodes) ! { self(), { "faux_election" } },
-	receive
-		{ _, { "end_of_simulation" } } ->
-			kill_nodes(Nodes, 1),
-			io:format("End of simulation~n")
-	end,
-	exit(normal).
+	file:delete("output.txt"),
+	run_looper(Nodes).
 
-start_node(Dataset) ->
-	spawn(simulation, node, [Dataset]).
+start_node(Dataset, Name) ->
+	spawn(Name, simulation, node, [Dataset]).
 
 node_looper(Dataset) ->
 	{ ID, HOST, NAME, PRIORITY, TOLERANCE, SUP, L_N, R_N, HAS_LEAD, N} = Dataset,
@@ -65,6 +74,8 @@ node_looper(Dataset) ->
 				(ID =:= CurrentLeader) ->
 					if
 						RevoltCounter >= ((N+1) div 2) ->
+							OutputString = lists:concat(["ID=", ID, " was deposed at t=", Time, "\n"]),
+							SUP ! { self(), { "output", OutputString } },
 							io:format("ID=~p was deposed at t=~p~n", [ID, Time]),
 							L_N ! { self(), { "revolution", -1, self() } },
 							receive
@@ -80,12 +91,16 @@ node_looper(Dataset) ->
 							L_N ! { self(), { "time_update", Time+1, LastElection, CurrentLeader, RevoltCounter } }
 					end;
 				(ID =/= CurrentLeader) and (Time-LastElection > TOLERANCE) and (Time-LastElection =< TOLERANCE + N) ->
+					OutputString = lists:concat(["ID=", ID, " revolted at t=", Time, "\n"]),
+					SUP ! { self(), { "output", OutputString } },
 					io:format("ID=~p revolted at t=~p~n", [ID, Time]),
 					L_N ! { self(), { "time_update", Time+1, LastElection, CurrentLeader, RevoltCounter+1 } };
 				true ->
 					L_N ! { self(), { "time_update", Time+1, LastElection, CurrentLeader, RevoltCounter } }
 			end;
 		{ _, { "elected", Time, LastElection } } ->
+			OutputString = lists:concat(["ID=", ID, " became leader at t=", Time, "\n"]),
+			SUP ! { self(), { "output", OutputString } },
 			io:format("ID=~p became leader at t=~p~n", [ID, Time]),
 			L_N ! { self(), { "time_update", Time+1, LastElection, ID, 0 } },
 			node_looper({ ID, HOST, NAME, PRIORITY, TOLERANCE, SUP, L_N, R_N, true, N });
