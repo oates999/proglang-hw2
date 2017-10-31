@@ -7,8 +7,8 @@
 spawn_from_list([]) ->
 	[];
 spawn_from_list([H|T]) ->
-	{ _, _, NAME, _, _ } = H,
-	NewNode = start_node(H, list_to_atom(Name)),
+	{ _, HOST, NAME, _, _ } = H,
+	NewNode = start_node(H, list_to_atom(NAME++"@"++HOST)),
 	[ NewNode | spawn_from_list(T)].
 
 link_nodes_from_list(Nodes, N) ->
